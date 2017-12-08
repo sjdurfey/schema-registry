@@ -19,7 +19,6 @@ package io.confluent.kafka.schemaregistry.client.rest;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-
 import io.confluent.kafka.schemaregistry.client.rest.entities.Config;
 import io.confluent.kafka.schemaregistry.client.rest.entities.ErrorMessage;
 import io.confluent.kafka.schemaregistry.client.rest.entities.Schema;
@@ -30,7 +29,8 @@ import io.confluent.kafka.schemaregistry.client.rest.entities.requests.RegisterS
 import io.confluent.kafka.schemaregistry.client.rest.entities.requests.RegisterSchemaResponse;
 import io.confluent.kafka.schemaregistry.client.rest.exceptions.RestClientException;
 import io.confluent.kafka.schemaregistry.client.rest.utils.UrlList;
-
+import org.apache.commons.compress.utils.IOUtils;
+import org.jboss.netty.handler.codec.http.HttpHeaders;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -39,6 +39,7 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
@@ -58,6 +59,9 @@ public class RestService {
       };
   private static final TypeReference<SchemaString> GET_SCHEMA_BY_ID_RESPONSE_TYPE =
       new TypeReference<SchemaString>() {
+      };
+  private static final TypeReference<String> GET_SCHEMA_ONLY_BY_VERSION_RESPONSE_TYPE =
+      new TypeReference<String>() {
       };
   private static final TypeReference<Schema> GET_SCHEMA_BY_VERSION_RESPONSE_TYPE =
       new TypeReference<Schema>() {
@@ -165,7 +169,18 @@ public class RestService {
       int responseCode = connection.getResponseCode();
       if (responseCode == HttpURLConnection.HTTP_OK) {
         InputStream is = connection.getInputStream();
-        T result = jsonDeserializer.readValue(is, responseFormat);
+        String headerField = connection.getHeaderField("Content-Type");
+        T result;
+        // For resources that return an unescaped string literal, the object mapper
+        // will identify the message as json, even if the response format is of type
+        // String.class. This causes the StringDeserializer used by the object mapper
+        // to not know how to deserialize the string, and causes parsing exceptions.
+        // So, if the type is plain/text, just read the response as a string and move on
+        if (headerField.equals("text/plain")) {
+          result = (T) new String(IOUtils.toByteArray(is), StandardCharsets.UTF_8);
+        } else {
+          result = jsonDeserializer.readValue(is, responseFormat);
+        }
         is.close();
         return result;
       } else if (responseCode == HttpURLConnection.HTTP_NO_CONTENT) {
@@ -398,6 +413,24 @@ public class RestService {
   public Schema getLatestVersion(String subject)
       throws IOException, RestClientException {
     return getLatestVersion(DEFAULT_REQUEST_PROPERTIES, subject);
+  }
+
+  public String getVersionSchemaOnly(String subject, int version)
+            throws IOException, RestClientException {
+    String path = String.format("/subjects/%s/versions/%d/schema", subject, version);
+
+    String response = httpRequest(path, "GET", null, DEFAULT_REQUEST_PROPERTIES,
+            GET_SCHEMA_ONLY_BY_VERSION_RESPONSE_TYPE);
+    return response;
+  }
+
+  public String getLatestVersionSchemaOnly(String subject)
+            throws IOException, RestClientException {
+    String path = String.format("/subjects/%s/versions/latest/schema", subject);
+
+    String response = httpRequest(path, "GET", null, DEFAULT_REQUEST_PROPERTIES,
+            GET_SCHEMA_ONLY_BY_VERSION_RESPONSE_TYPE);
+    return response;
   }
 
   public Schema getLatestVersion(Map<String, String> requestProperties,

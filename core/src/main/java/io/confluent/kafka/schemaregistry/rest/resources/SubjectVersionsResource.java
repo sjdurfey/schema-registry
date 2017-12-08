@@ -53,6 +53,7 @@ import io.confluent.kafka.schemaregistry.rest.VersionId;
 import io.confluent.kafka.schemaregistry.rest.exceptions.Errors;
 import io.confluent.kafka.schemaregistry.storage.KafkaSchemaRegistry;
 import io.confluent.rest.annotations.PerformanceMetric;
+import javax.ws.rs.core.MediaType;
 
 @Path("/subjects/{subject}/versions")
 @Produces({Versions.SCHEMA_REGISTRY_V1_JSON_WEIGHTED,
@@ -101,6 +102,15 @@ public class SubjectVersionsResource {
       throw Errors.schemaRegistryException(errorMessage, e);
     }
     return schema;
+  }
+
+  @GET
+  @Path("/{version}/schema")
+  @Produces({ MediaType.TEXT_PLAIN })
+  @PerformanceMetric("subjects.versions.get-schema.only")
+  public Object getSchemaOnly(@PathParam("subject") String subject,
+                              @PathParam("version") String version) {
+      return getSchema(subject, version).getSchema();
   }
 
   @GET
